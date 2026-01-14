@@ -1,0 +1,278 @@
+{
+  "betRules": [
+
+
+    {
+      "innings": 1,
+      "oversRange": "0.1-5.3",
+      "rules": [
+        {
+          "ruleId": "1I-1",
+          "condition": {
+            "type": "OR",
+            "checks": [
+              { "last2BallsRuns": "<=1" },
+              { "last3BallsRuns": "<=2" },
+              { "lastBall": "WICKET" }
+            ]
+          },
+          "triggerBet": {
+            "betType": "OVER",
+            "marketName": "1st Innings 6 Overs Line",
+            "stake": 5
+          }
+        },
+        {
+          "ruleId": "1I-2",
+          "condition": {
+            "last3BallsRuns": ">8"
+          },
+          "triggerBet": {
+            "betType": "UNDER",
+            "marketName": "1st Innings 6 Overs Line",
+            "stake": 5
+          }
+        }
+      ]
+    },
+
+    {
+      "innings": 1,
+      "oversRange": "6.0-9.0",
+      "rules": [
+        {
+          "ruleId": "1I-3",
+          "condition": {
+            "type": "OR",
+            "checks": [
+              { "last2BallsRuns": "<=1" },
+              { "last3BallsRuns": "<=2" },
+              { "lastBall": "WICKET" }
+            ]
+          },
+          "triggerBet": {
+            "betType": "OVER",
+            "marketName": "1st Innings 10 Overs Line",
+            "stake": 5
+          }
+        },
+        {
+          "ruleId": "1I-4",
+          "condition": {
+            "last3BallsRuns": ">8"
+          },
+          "triggerBet": {
+            "betType": "UNDER",
+            "marketName": "1st Innings 10 Overs Line",
+            "stake": 5
+          }
+        }
+      ]
+    },
+
+    {
+      "innings": 1,
+      "oversRange": "10.0-14.0",
+      "rules": [
+        {
+          "ruleId": "1I-5",
+          "condition": {
+            "type": "OR",
+            "checks": [
+              { "last2BallsRuns": "<=1" },
+              { "last3BallsRuns": "<=2" },
+              { "lastBall": "WICKET" }
+            ]
+          },
+          "triggerBet": {
+            "betType": "OVER",
+            "marketName": "1st Innings 15 Overs Line",
+            "stake": 5
+          }
+        },
+        {
+          "ruleId": "1I-6",
+          "condition": {
+            "last3BallsRuns": ">8"
+          },
+          "triggerBet": {
+            "betType": "UNDER",
+            "marketName": "1st Innings 15 Overs Line",
+            "stake": 5
+          }
+        }
+      ]
+    },
+
+    {
+      "innings": 1,
+      "oversRange": "15.0-19.0",
+      "rules": [
+        {
+          "ruleId": "1I-7",
+          "condition": {
+            "type": "OR",
+            "checks": [
+              { "last2BallsRuns": "<=1" },
+              { "last3BallsRuns": "<=2" },
+              { "lastBall": "WICKET" }
+            ]
+          },
+          "triggerBet": {
+            "betType": "OVER",
+            "marketName": "1st Innings 20 Overs Line",
+            "stake": 5
+          }
+        },
+        {
+          "ruleId": "1I-8",
+          "condition": {
+            "last3BallsRuns": ">8"
+          },
+          "triggerBet": {
+            "betType": "UNDER",
+            "marketName": "1st Innings 20 Overs Line",
+            "stake": 5
+          }
+        }
+      ]
+    },
+
+
+    {
+      "innings": 2,
+      "oversRange": "0.1-5.3",
+      "rules": [
+        {
+          "ruleId": "2I-1",
+          "condition": {
+            "type": "OR",
+            "checks": [
+              { "last2BallsRuns": "<=1" },
+              { "last3BallsRuns": "<=2" },
+              { "lastBall": "WICKET" }
+            ]
+          },
+          "triggerBet": {
+            "betType": "OVER",
+            "marketName": "2nd Innings 6 Overs Line",
+            "stake": 5
+          }
+        },
+        {
+          "ruleId": "2I-2",
+          "condition": {
+            "last3BallsRuns": ">8"
+          },
+          "triggerBet": {
+            "betType": "UNDER",
+            "marketName": "2nd Innings 6 Overs Line",
+            "stake": 5
+          }
+        }
+      ]
+    },
+
+    {
+      "innings": 2,
+      "oversRange": "6.0-9.0",
+      "rules": [
+        {
+          "ruleId": "2I-3",
+          "condition": {
+            "type": "OR",
+            "checks": [
+              { "last2BallsRuns": "<=1" },
+              { "last3BallsRuns": "<=2" },
+              { "lastBall": "WICKET" }
+            ]
+          },
+          "triggerBet": {
+            "betType": "OVER",
+            "marketName": "2nd Innings 10 Overs Line",
+            "stake": 5
+          }
+        },
+        {
+          "ruleId": "2I-4",
+          "condition": {
+            "last3BallsRuns": ">8"
+          },
+          "triggerBet": {
+            "betType": "UNDER",
+            "marketName": "2nd Innings 10 Overs Line",
+            "stake": 5
+          }
+        }
+      ]
+    },
+
+    {
+      "innings": 2,
+      "oversRange": "10.0-14.0",
+      "rules": [
+        {
+          "ruleId": "2I-5",
+          "condition": {
+            "type": "OR",
+            "checks": [
+              { "last2BallsRuns": "<=1" },
+              { "last3BallsRuns": "<=2" },
+              { "lastBall": "WICKET" }
+            ]
+          },
+          "triggerBet": {
+            "betType": "OVER",
+            "marketName": "2nd Innings 15 Overs Line",
+            "stake": 5
+          }
+        },
+        {
+          "ruleId": "2I-6",
+          "condition": {
+            "last3BallsRuns": ">8"
+          },
+          "triggerBet": {
+            "betType": "UNDER",
+            "marketName": "2nd Innings 15 Overs Line",
+            "stake": 5
+          }
+        }
+      ]
+    },
+
+    {
+      "innings": 2,
+      "oversRange": "15.0-19.0",
+      "rules": [
+        {
+          "ruleId": "2I-7",
+          "condition": {
+            "type": "OR",
+            "checks": [
+              { "last2BallsRuns": "<=1" },
+              { "last3BallsRuns": "<=2" },
+              { "lastBall": "WICKET" }
+            ]
+          },
+          "triggerBet": {
+            "betType": "OVER",
+            "marketName": "2nd Innings 20 Overs Line",
+            "stake": 5
+          }
+        },
+        {
+          "ruleId": "2I-8",
+          "condition": {
+            "last3BallsRuns": ">8"
+          },
+          "triggerBet": {
+            "betType": "UNDER",
+            "marketName": "2nd Innings 20 Overs Line",
+            "stake": 5
+          }
+        }
+      ]
+    }
+  ]
+}
