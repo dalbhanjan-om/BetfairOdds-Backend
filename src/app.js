@@ -4,7 +4,8 @@ import cookieParser from "cookie-parser";
 import { listEvents } from "./controllers/BetfairController/EventListController.js";
 import { login } from "./controllers/BetfairController/AuthController.js";
 import { listMarketCatalogue } from "./controllers/BetfairController/MarketCatalogue.js";
-import { startBot } from "./controllers/BetfairController/StreamController.js";
+import { startBot, stopBot, getBotStatus } from "./controllers/BetfairController/StreamController.js";
+import { placeOrder } from "./controllers/BetfairController/PlaceOrderController.js";
 
 const app = express();
 
@@ -50,5 +51,8 @@ app.post("/events", listEvents);
 
 app.post("/market-catalogue", listMarketCatalogue);
 app.post("/bot/start", startBot);
+app.post("/bot/stop", stopBot);
+app.get("/bot/status", getBotStatus);
+app.post("/place-order", placeOrder);
 
 export default app;

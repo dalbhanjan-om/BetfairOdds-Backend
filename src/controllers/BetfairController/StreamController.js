@@ -1,20 +1,63 @@
-import tls from "tls";
+import { Worker } from "worker_threads";
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 /**
- * CONFIG
+ * In-memory state for active workers
+ * Map<marketId, Worker>
  */
-const STREAM_HOST = "stream-api.betfair.com";
-const STREAM_PORT = 443;
+const activeWorkers = new Map();
 
 /**
- * In-memory state
+ * Factory function to create and manage a stream worker
  */
-const activeStreams = new Map();
+function createStreamWorker(marketId, appKey, sessionToken) {
+  return new Promise((resolve, reject) => {
+    const workerPath = join(__dirname, "../../workers/StreamWorker.js");
+    const worker = new Worker(workerPath, {
+      workerData: { marketId, appKey, sessionToken },
+    });
+
+    const handlers = {
+      connected: () => resolve(worker),
+      error: (data) => {
+        worker.terminate();
+        reject(new Error(data.error || "Worker failed to start"));
+      },
+    };
+
+    // Set up initial message handlers
+    worker.on("message", (msg) => {
+      const handler = handlers[msg.type];
+      if (handler) {
+        handler(msg.data);
+        // Remove handler after first use
+        delete handlers[msg.type];
+      }
+    });
+
+    worker.on("error", (err) => {
+      reject(err);
+    });
+
+    // Timeout after 30 seconds
+    setTimeout(() => {
+      if (handlers.connected) {
+        worker.terminate();
+        reject(new Error("Worker connection timeout"));
+      }
+    }, 30000);
+  });
+}
 
 /**
  * Start Bot Controller
+ * Creates a worker thread for streaming
  */
-export function startBot(req, res) {
+export async function startBot(req, res) {
   const appKey = process.env.BETFAIR_APP_KEY;
   const sessionToken =
     req.header("X-Authentication") ||
@@ -36,189 +79,158 @@ export function startBot(req, res) {
   }
 
   /**
-   * Close existing stream if already running
+   * Stop existing worker if already running
    */
-  if (activeStreams.has(marketId)) {
-    const oldSocket = activeStreams.get(marketId);
-    oldSocket.destroy();
-    activeStreams.delete(marketId);
-  }
-
-  /**
-   * Ball detection state
-   */
-  let ballInProgress = false;
-  let ballCount = 0;
-
-  /**
-   * Open TLS socket
-   */
-  const socket = tls.connect(
-    {
-      host: STREAM_HOST,
-      port: STREAM_PORT,
-      servername: STREAM_HOST,
-    },
-    () => {
-      console.log(`[Stream] Connected to ${STREAM_HOST}:${STREAM_PORT}`);
-
-      /**
-       * 1️⃣ AUTHENTICATION
-       */
-      socket.write(
-        JSON.stringify({
-          op: "authentication",
-          id: 1,
-          appKey,
-          session: sessionToken,
-        }) + "\r\n"
-      );
-
-      /**
-       * 2️⃣ MARKET SUBSCRIPTION
-       */
-      socket.write(
-        JSON.stringify({
-          op: "marketSubscription",
-          id: 2,
-          segmentationEnabled: true,
-          heartbeatMs: 1000,
-          marketFilter: {
-            marketIds: [marketId],
-          },
-          marketDataFilter: {
-            ladderLevels: 1,
-            fields: [
-              "EX_BEST_OFFERS",
-              "EX_LTP",
-              "EX_TRADED_VOL",
-              "EX_MARKET_DEF",
-            ],
-          },
-        }) + "\r\n"
-      );
-    }
-  );
-
-  socket.setEncoding("utf8");
-
-  /**
-   * STREAM DATA HANDLER
-   */
-  socket.on("data", (chunk) => {
-    const messages = chunk.split("\r\n").filter(Boolean);
-    // for (const msg of messages) {
-    //     try {
-    //       const parsed = JSON.parse(msg);
-    
-    //       // 🔥 LOG EVERYTHING EXACTLY AS RECEIVED
-    //       console.log(
-    //         "\n================ STREAM MESSAGE ================\n",
-    //         JSON.stringify(parsed, null, 2),
-    //         "\n================================================\n"
-    //       );
-    //     } catch (e) {
-    //       console.error(
-    //         "[Stream] Failed to parse raw message:",
-    //         msg
-    //       );
-    //     }
-    //   }
- /**
-   * LOG EVERYTHING EXACTLY AS RECEIVED
-   */
-
- for (const msg of messages) {
-    let parsed;
+  if (activeWorkers.has(marketId)) {
     try {
-      parsed = JSON.parse(msg);
-    } catch {
-      continue;
-    }
-  
-    if (parsed.op === "connection") {
-      console.log("[Stream] Connection established");
-      continue;
-    }
-  
-    if (parsed.op === "status") {
-      console.log(`[Stream] Status response for id=${parsed.id}`);
-      continue;
-    }
-  
-    if (parsed.op === "mcm" && parsed.mc) {
-      for (const market of parsed.mc) {
-        const marketStatus = market.marketDefinition?.status;
-  
-        // 🏏 BALL DETECTION
-        if (marketStatus === "SUSPENDED") {
-          ballInProgress = true;
-        }
-  
-        if (marketStatus === "OPEN" && ballInProgress) {
-          ballCount++;
-          ballInProgress = false;
-          console.log(`🏏 BALL COMPLETED → Ball #${ballCount}`);
-        }
-  
-        // 🧮 RUNNER / PRICE DATA
-        if (market.rc) {
-          for (const runner of market.rc) {
-            const selectionId = runner.id;
-  
-            const bestBack = runner.batb?.[0]; // [level, price, size]
-            const bestLay = runner.batl?.[0];
-            const lastTradedPrice = runner.ltp; // ⭐ LTP
-  
-            if (bestBack) {
-              console.log(
-                `BACK | sel=${selectionId} price=${bestBack[1]} size=${bestBack[2]}`
-              );
-            }
-  
-            if (bestLay) {
-              console.log(
-                `LAY  | sel=${selectionId} price=${bestLay[1]} size=${bestLay[2]}`
-              );
-            }
-  
-            if (lastTradedPrice !== undefined) {
-              console.log(
-                `LTP  | sel=${selectionId} price=${lastTradedPrice}`
-              );
-            }
-  
-            /**
-             * 🔥 RULE ENGINE GOES HERE
-             * Example:
-             * if (ballCount === 3 && priceGapIsOneTick(bestBack, bestLay, lastTradedPrice)) {
-             *   placeOrder(...)
-             * }
-             */
-          }
-        }
-      }
+      const existingWorker = activeWorkers.get(marketId);
+      existingWorker.postMessage({ type: "stop" });
+      existingWorker.terminate();
+      activeWorkers.delete(marketId);
+    } catch (err) {
+      console.error(`[Stream] Error stopping existing worker for ${marketId}:`, err.message);
     }
   }
-  
-  });
 
-  /**
-   * ERROR HANDLING
-   */
-  socket.on("error", (err) => {
-    console.error("[Stream] Socket error:", err.message);
-  });
+  try {
+    /**
+     * Create worker thread in background
+     */
+    const worker = await createStreamWorker(marketId, appKey, sessionToken);
 
-  socket.on("close", () => {
-    console.log("[Stream] Connection closed");
-    activeStreams.delete(marketId);
-  });
+    /**
+     * Set up worker message handlers
+     * Worker handles its own logging - controller only manages worker lifecycle
+     */
+    worker.on("message", (msg) => {
+      // Only handle critical events that affect worker management
+      switch (msg.type) {
+        case "error":
+          console.error(`[Stream Controller] Market ${msg.marketId} worker reported error:`, msg.error || msg);
+          break;
 
-  activeStreams.set(marketId, socket);
+        case "closed":
+          // Worker connection closed - remove from active workers
+          if (activeWorkers.get(msg.marketId) === worker) {
+            activeWorkers.delete(msg.marketId);
+          }
+          break;
 
+        case "stopped":
+          // Worker stopped - remove from active workers
+          if (activeWorkers.get(msg.marketId) === worker) {
+            activeWorkers.delete(msg.marketId);
+          }
+          break;
+
+        // Other messages (connected, connection, status, ballCompleted, priceUpdate)
+        // are logged directly by the worker - no action needed here
+      }
+    });
+
+    worker.on("error", (err) => {
+      console.error(`[Stream Worker] Market ${marketId} worker error:`, err);
+      if (activeWorkers.get(marketId) === worker) {
+        activeWorkers.delete(marketId);
+      }
+    });
+
+    worker.on("exit", (code) => {
+      if (code !== 0) {
+        console.error(`[Stream Worker] Market ${marketId} worker exited with code ${code}`);
+      }
+      if (activeWorkers.get(marketId) === worker) {
+        activeWorkers.delete(marketId);
+      }
+    });
+
+    /**
+     * Store worker reference
+     */
+    activeWorkers.set(marketId, worker);
+
+    console.log(`[Stream] Bot started for market ${marketId} (worker thread)`);
+
+    return res.status(200).json({
+      message: "Bot started successfully",
+      marketId,
+      running: true,
+    });
+  } catch (err) {
+    console.error(`[Stream] Failed to start bot for market ${marketId}:`, err.message);
+    return res.status(500).json({
+      error: "Failed to start Betfair stream bot",
+      details: err.message,
+    });
+  }
+}
+
+/**
+ * Stop Bot Controller
+ * Terminates the worker thread for the specified market
+ */
+export function stopBot(req, res) {
+  const { marketId } = req.body || {};
+
+  if (!marketId) {
+    return res.status(400).json({ error: "marketId is required" });
+  }
+
+  if (!activeWorkers.has(marketId)) {
+    return res.status(404).json({
+      error: "Bot is not running for this market",
+      marketId,
+    });
+  }
+
+  try {
+    const worker = activeWorkers.get(marketId);
+
+    // Send stop message to worker
+    worker.postMessage({ type: "stop" });
+
+    // Terminate worker thread
+    worker.terminate();
+
+    // Remove from active workers
+    activeWorkers.delete(marketId);
+
+    console.log(`[Stream] Bot stopped for market ${marketId}`);
+
+    return res.status(200).json({
+      message: "Bot stopped successfully",
+      marketId,
+      running: false,
+    });
+  } catch (err) {
+    console.error(`[Stream] Error stopping bot for market ${marketId}:`, err.message);
+    return res.status(500).json({
+      error: "Failed to stop bot",
+      details: err.message,
+    });
+  }
+}
+
+/**
+ * Get Bot Status Controller
+ * Returns status of all active bots
+ */
+export function getBotStatus(req, res) {
+  const { marketId } = req.query || {};
+
+  if (marketId) {
+    // Check specific market
+    const isRunning = activeWorkers.has(marketId);
+    return res.status(200).json({
+      marketId,
+      running: isRunning,
+    });
+  }
+
+  // Return all active markets
+  const activeMarkets = Array.from(activeWorkers.keys());
   return res.status(200).json({
-    message: "Bot started successfully",
-    marketId,
+    activeMarkets,
+    count: activeMarkets.length,
   });
 }
