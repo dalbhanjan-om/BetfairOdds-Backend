@@ -149,7 +149,7 @@ export async function startBot(req, res) {
      */
     activeWorkers.set(marketId, worker);
 
-    console.log(`[Stream] Bot started for market ${marketId} (worker thread)`);
+   
 
     return res.status(200).json({
       message: "Bot started successfully",

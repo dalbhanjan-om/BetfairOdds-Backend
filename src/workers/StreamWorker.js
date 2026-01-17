@@ -161,25 +161,39 @@ function evaluateBettingConditions(selectionId, backPrice, layPrice) {
     return null; // Don't bet if another bet is already being placed
   }
 
+  // 2c. Check price movement to determine potential bet prices
+  const priceMovement = checkPriceMovement90s();
+  if (priceMovement === null) return null; // Not enough data
+
+  const { movement, oldPrice, newPrice } = priceMovement;
+
+  // Determine what the bet price would be based on movement
+  let proposedBetPrice = null;
+  if (movement >= 5) {
+    proposedBetPrice = backPrice; // UNDER bet (BACK)
+  } else if (movement <= -2) {
+    proposedBetPrice = layPrice; // OVER bet (LAY)
+  }
+
+  // Check if proposed bet price is the same as last bet price
+  if (lastBetPrice !== null && proposedBetPrice !== null) {
+    if (Math.abs(proposedBetPrice - lastBetPrice) < 0.01) {
+      return null; // Don't bet at the same price as last bet
+    }
+  }
+
   // Also check if price unchanged in general in last 15 seconds
   if (isPriceUnchanged15s()) {
     return null; // Don't bet if price unchanged
   }
 
-  // 3. Check price movement in last 90 seconds
-  const priceMovement = checkPriceMovement90s();
-
-  if (priceMovement === null) return null; // Not enough data
-
-  const { movement, oldPrice, newPrice } = priceMovement;
-
-  // 4. Apply betting rules
-  if (movement >= 6) {
-    // Line markets moved up >= 6: Place UNDER bet (BACK)
+  // 3. Apply betting rules (price movement already checked above)
+  if (movement >= 5) {
+    // Line markets moved up >= 5: Place UNDER bet (BACK)
     return {
       side: "BACK",
       price: backPrice,
-      reason: `Line moved up ${movement.toFixed(2)} (>= 6)`,
+      reason: `Line moved up ${movement.toFixed(2)} (>= 5)`,
       oldPrice,
       newPrice,
     };
@@ -224,7 +238,7 @@ socket = tls.connect(
   },
   () => {
     sendToParent("connected");
-    console.log(`[Stream Worker] Market ${marketId} connected to ${STREAM_HOST}:${STREAM_PORT}`);
+    //console.log(`[Stream Worker] Market ${marketId} connected to ${STREAM_HOST}:${STREAM_PORT}`);
 
     /**
      * 1️⃣ AUTHENTICATION
@@ -287,14 +301,14 @@ socket.on("data", (chunk) => {
 
 
     if (parsed.op === "connection") {
-      console.log(`[Stream Worker] Market ${marketId} - Connection ID: ${parsed.connectionId || "N/A"}`);
+      //console.log(`[Stream Worker] Market ${marketId} - Connection ID: ${parsed.connectionId || "N/A"}`);
       sendToParent("connection", { connectionId: parsed.connectionId });
       continue;
     }
 
     if (parsed.op === "status") {
       if (parsed.statusCode === "SUCCESS") {
-        console.log(`[Stream Worker] Market ${marketId} - Subscription successful`);
+       // console.log(`[Stream Worker] Market ${marketId} - Subscription successful`);
       } else if (parsed.errorCode) {
         console.error(`[Stream Worker] Market ${marketId} - Status error: ${parsed.errorCode} - ${parsed.errorMessage || ""}`);
       }

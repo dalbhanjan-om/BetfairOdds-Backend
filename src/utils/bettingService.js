@@ -27,7 +27,7 @@ export async function placeBetOrder(marketId, appKey, sessionToken, instructions
         side: inst.side,
         orderType: "LIMIT", // Always LIMIT
         limitOrder: {
-          size: inst.size || 2.5, // Default to 1 if not specified
+          size: inst.size || 2, // Default to 2 if not specified
           price: inst.limitOrder.price,
           persistenceType: inst.limitOrder.persistenceType || "PERSIST",
         },
