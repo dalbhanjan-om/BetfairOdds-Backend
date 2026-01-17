@@ -2,7 +2,7 @@ import { parentPort, workerData } from "worker_threads";
 import tls from "tls";
 import { placeBetOrder } from "../utils/bettingService.js";
 
-const { marketId, appKey, sessionToken } = workerData;
+const { marketId, appKey, sessionToken, size = 1, upThreshold = 5, downThreshold = 2 } = workerData;
 
 const STREAM_HOST = "stream-api.betfair.com";
 const STREAM_PORT = 443;
@@ -43,6 +43,7 @@ async function placeBet(selectionId, side, price, reason, oldPrice, newPrice) {
       {
         selectionId,
         side,
+        size: size, // Use the size from workerData
         limitOrder: {
           price,
           persistenceType: "PERSIST",
@@ -168,10 +169,11 @@ function evaluateBettingConditions(selectionId, backPrice, layPrice) {
   const { movement, oldPrice, newPrice } = priceMovement;
 
   // Determine what the bet price would be based on movement
+  // Use configurable thresholds from workerData
   let proposedBetPrice = null;
-  if (movement >= 5) {
+  if (movement >= upThreshold) {
     proposedBetPrice = backPrice; // UNDER bet (BACK)
-  } else if (movement <= -2) {
+  } else if (movement <= -downThreshold) {
     proposedBetPrice = layPrice; // OVER bet (LAY)
   }
 
@@ -188,21 +190,22 @@ function evaluateBettingConditions(selectionId, backPrice, layPrice) {
   }
 
   // 3. Apply betting rules (price movement already checked above)
-  if (movement >= 5) {
-    // Line markets moved up >= 5: Place UNDER bet (BACK)
+  // Use configurable thresholds from workerData
+  if (movement >= upThreshold) {
+    // Line markets moved up >= upThreshold: Place UNDER bet (BACK)
     return {
       side: "BACK",
       price: backPrice,
-      reason: `Line moved up ${movement.toFixed(2)} (>= 5)`,
+      reason: `Line moved up ${movement.toFixed(2)} (>= ${upThreshold})`,
       oldPrice,
       newPrice,
     };
-  } else if (movement <= -2) {
-    // Line markets reduced >= 2: Place OVER bet (LAY)
+  } else if (movement <= -downThreshold) {
+    // Line markets reduced >= downThreshold: Place OVER bet (LAY)
     return {
       side: "LAY",
       price: layPrice,
-      reason: `Line reduced ${Math.abs(movement).toFixed(2)} (>= 2)`,
+      reason: `Line reduced ${Math.abs(movement).toFixed(2)} (>= ${downThreshold})`,
       oldPrice,
       newPrice,
     };
