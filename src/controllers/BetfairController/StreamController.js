@@ -7,18 +7,18 @@ const __dirname = dirname(__filename);
 
 /**
  * In-memory state for active workers
- * Map<marketId, Worker>
+ * Map<marketId, { worker: Worker, config: { size, upThreshold, downThreshold } }>
  */
 const activeWorkers = new Map();
 
 /**
  * Factory function to create and manage a stream worker
  */
-function createStreamWorker(marketId, appKey, sessionToken) {
+function createStreamWorker(marketId, appKey, sessionToken, size = 1, upThreshold = 5, downThreshold = 2) {
   return new Promise((resolve, reject) => {
     const workerPath = join(__dirname, "../../workers/StreamWorker.js");
     const worker = new Worker(workerPath, {
-      workerData: { marketId, appKey, sessionToken },
+      workerData: { marketId, appKey, sessionToken, size, upThreshold, downThreshold },
     });
 
     const handlers = {
@@ -64,7 +64,7 @@ export async function startBot(req, res) {
     req.header("x-authentication") ||
     (req.header("Authorization") || "").replace(/Bearer\s+/i, "").trim();
 
-  const { marketId } = req.body || {};
+  const { marketId, size, upThreshold, downThreshold } = req.body || {};
 
   if (!appKey) {
     return res.status(400).json({ error: "BETFAIR_APP_KEY not set" });
@@ -78,14 +78,19 @@ export async function startBot(req, res) {
     return res.status(400).json({ error: "marketId is required" });
   }
 
+  // Validate and set defaults
+  const betSize = size && size > 0 ? parseFloat(size) : 1;
+  const upThresh = upThreshold && upThreshold > 0 ? parseFloat(upThreshold) : 5;
+  const downThresh = downThreshold && downThreshold > 0 ? parseFloat(downThreshold) : 2;
+
   /**
    * Stop existing worker if already running
    */
   if (activeWorkers.has(marketId)) {
     try {
-      const existingWorker = activeWorkers.get(marketId);
-      existingWorker.postMessage({ type: "stop" });
-      existingWorker.terminate();
+      const existing = activeWorkers.get(marketId);
+      existing.worker.postMessage({ type: "stop" });
+      existing.worker.terminate();
       activeWorkers.delete(marketId);
     } catch (err) {
       console.error(`[Stream] Error stopping existing worker for ${marketId}:`, err.message);
@@ -96,7 +101,7 @@ export async function startBot(req, res) {
     /**
      * Create worker thread in background
      */
-    const worker = await createStreamWorker(marketId, appKey, sessionToken);
+    const worker = await createStreamWorker(marketId, appKey, sessionToken, betSize, upThresh, downThresh);
 
     /**
      * Set up worker message handlers
@@ -111,14 +116,16 @@ export async function startBot(req, res) {
 
         case "closed":
           // Worker connection closed - remove from active workers
-          if (activeWorkers.get(msg.marketId) === worker) {
+          const closedEntry = activeWorkers.get(msg.marketId);
+          if (closedEntry && closedEntry.worker === worker) {
             activeWorkers.delete(msg.marketId);
           }
           break;
 
         case "stopped":
           // Worker stopped - remove from active workers
-          if (activeWorkers.get(msg.marketId) === worker) {
+          const stoppedEntry = activeWorkers.get(msg.marketId);
+          if (stoppedEntry && stoppedEntry.worker === worker) {
             activeWorkers.delete(msg.marketId);
           }
           break;
@@ -130,7 +137,8 @@ export async function startBot(req, res) {
 
     worker.on("error", (err) => {
       console.error(`[Stream Worker] Market ${marketId} worker error:`, err);
-      if (activeWorkers.get(marketId) === worker) {
+      const errorEntry = activeWorkers.get(marketId);
+      if (errorEntry && errorEntry.worker === worker) {
         activeWorkers.delete(marketId);
       }
     });
@@ -139,15 +147,23 @@ export async function startBot(req, res) {
       if (code !== 0) {
         console.error(`[Stream Worker] Market ${marketId} worker exited with code ${code}`);
       }
-      if (activeWorkers.get(marketId) === worker) {
+      const exitEntry = activeWorkers.get(marketId);
+      if (exitEntry && exitEntry.worker === worker) {
         activeWorkers.delete(marketId);
       }
     });
 
     /**
-     * Store worker reference
+     * Store worker reference with configuration
      */
-    activeWorkers.set(marketId, worker);
+    activeWorkers.set(marketId, {
+      worker,
+      config: {
+        size: betSize,
+        upThreshold: upThresh,
+        downThreshold: downThresh,
+      },
+    });
 
    
 
@@ -184,7 +200,8 @@ export function stopBot(req, res) {
   }
 
   try {
-    const worker = activeWorkers.get(marketId);
+    const entry = activeWorkers.get(marketId);
+    const worker = entry.worker;
 
     // Send stop message to worker
     worker.postMessage({ type: "stop" });
@@ -213,24 +230,34 @@ export function stopBot(req, res) {
 
 /**
  * Get Bot Status Controller
- * Returns status of all active bots
+ * Returns status of all active bots with their configurations
  */
 export function getBotStatus(req, res) {
   const { marketId } = req.query || {};
 
   if (marketId) {
     // Check specific market
-    const isRunning = activeWorkers.has(marketId);
+    const entry = activeWorkers.get(marketId);
+    const isRunning = !!entry;
     return res.status(200).json({
       marketId,
       running: isRunning,
+      ...(isRunning && entry.config ? { config: entry.config } : {}),
     });
   }
 
-  // Return all active markets
-  const activeMarkets = Array.from(activeWorkers.keys());
+  // Return all active markets with their configurations
+  const activeBots = {};
+  for (const [id, entry] of activeWorkers.entries()) {
+    activeBots[id] = {
+      running: true,
+      config: entry.config,
+    };
+  }
+
   return res.status(200).json({
-    activeMarkets,
-    count: activeMarkets.length,
+    activeBots,
+    activeMarkets: Object.keys(activeBots),
+    count: Object.keys(activeBots).length,
   });
 }

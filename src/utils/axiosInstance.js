@@ -19,6 +19,9 @@ const defaultAxiosInstance = axios.create({
 /**
  * Betfair API axios instance
  * Used for Betfair exchange API calls
+ * 
+ * THREAD-SAFE: Axios instances are safe for concurrent use across worker threads.
+ * Each request creates an independent config object with per-request headers.
  */
 export const betfairApiInstance = axios.create({
   baseURL: BETFAIR_API_BASE_URL,
