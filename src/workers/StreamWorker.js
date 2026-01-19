@@ -2,7 +2,7 @@ import { parentPort, workerData } from "worker_threads";
 import tls from "tls";
 import { placeBetOrder } from "../utils/bettingService.js";
 
-const { marketId, appKey, sessionToken, size = 1, upThreshold = 5, downThreshold = 2 } = workerData;
+const { marketId, appKey, sessionToken, size = 1, upThreshold = 5, downThreshold = 3 } = workerData;
 
 const STREAM_HOST = "stream-api.betfair.com";
 const STREAM_PORT = 443;
@@ -21,7 +21,9 @@ let isRunning = true;
 const priceHistory = []; // Array of { timestamp, backPrice, layPrice, selectionId }
 let lastBetTime = null;
 let lastBetPrice = null;
-let betInProgress = false; // Flag to prevent concurrent bet attempts
+// Track in-flight bets by unique key (selectionId:price) to prevent duplicates
+// Each worker thread has its own Set - completely isolated from other threads
+const inFlightBets = new Set(); // Set of "selectionId:price" strings
 
 /**
  * Send message to parent
@@ -34,9 +36,18 @@ function sendToParent(type, data = {}) {
 
 /**
  * Place bet function - uses shared betting service
+ * Completely non-blocking - each worker thread places bets independently
+ * NOTE: betKey is already added to inFlightBets by the caller to prevent race conditions
  */
 async function placeBet(selectionId, side, price, reason, oldPrice, newPrice) {
-  const timestamp = new Date().toISOString();
+  const betKey = `${selectionId}:${price.toFixed(2)}`;
+  
+  // Double-check: betKey should already be in inFlightBets (added by caller)
+  // This is a safety check in case of unexpected code paths
+  if (!inFlightBets.has(betKey)) {
+    // This shouldn't happen, but if it does, add it now
+    inFlightBets.add(betKey);
+  }
   
   try {
     const instructions = [
@@ -51,32 +62,18 @@ async function placeBet(selectionId, side, price, reason, oldPrice, newPrice) {
       },
     ];
 
-    // Log bet details before placing
-    // console.log(`\n🎯 [BET PLACEMENT]`);
-    // console.log(`   Timestamp: ${timestamp}`);
-    // console.log(`   Market: ${marketId}`);
-    // console.log(`   Selection: ${selectionId}`);
-    // console.log(`   Side: ${side}`);
-    // console.log(`   Bet Price: ${price}`);
-    // console.log(`   Reason: ${reason}`);
-    // if (oldPrice !== undefined && newPrice !== undefined) {
-    //   console.log(`   Price Deviation:`);
-    //   console.log(`     Old Price: ${oldPrice.toFixed(2)}`);
-    //   console.log(`     New Price: ${newPrice.toFixed(2)}`);
-    //   console.log(`     Movement: ${(newPrice - oldPrice).toFixed(2)}`);
-    // }
-    // console.log(`\n`);
-
+    // Place bet asynchronously - this is non-blocking
+    // Each worker thread processes bets independently
     const responseData = await placeBetOrder(marketId, appKey, sessionToken, instructions);
-
-    // Note: lastBetTime and lastBetPrice are now set BEFORE this function is called
-    // to prevent race conditions with rapid price updates
-    //console.log(`✅ [Bet Placed Successfully] Market: ${marketId} | Selection: ${selectionId} | Side: ${side} | Price: ${price}`);
     
     return responseData;
   } catch (err) {
     console.error(`❌ [Bet Failed] Market: ${marketId} | Selection: ${selectionId} | Error:`, err.response?.data || err.message);
     return null;
+  } finally {
+    // Always remove from in-flight set when done (success or failure)
+    // This allows new bets at different prices to proceed immediately
+    inFlightBets.delete(betKey);
   }
 }
 
@@ -157,10 +154,8 @@ function evaluateBettingConditions(selectionId, backPrice, layPrice) {
     }
   }
 
-  // 2b. Check if a bet is already in progress
-  if (betInProgress) {
-    return null; // Don't bet if another bet is already being placed
-  }
+  // 2b. Check if we're still within cooldown period (handled by inFlightBets in placeBet)
+  // This check is now handled by inFlightBets Set in placeBet function
 
   // 2c. Check price movement to determine potential bet prices
   const priceMovement = checkPriceMovement90s();
@@ -327,6 +322,14 @@ socket.on("data", (chunk) => {
       for (const market of parsed.mc) {
         const marketStatus = market.marketDefinition?.status;
 
+        // ⚠️ MARKET CLOSURE DETECTION
+        if (marketStatus === "CLOSED") {
+          console.log(`[Stream Worker] Market ${marketId} - Market is CLOSED`);
+          sendToParent("marketClosed", { reason: "Market status changed to CLOSED" });
+          cleanup();
+          return; // Stop processing further data
+        }
+
         // 🏏 BALL DETECTION
         if (marketStatus === "SUSPENDED") {
           ballInProgress = true;
@@ -385,12 +388,32 @@ socket.on("data", (chunk) => {
               const betDecision = evaluateBettingConditions(selectionId, backPrice, layPrice);
 
               if (betDecision) {
-                // Set flags IMMEDIATELY to prevent race condition with rapid updates
-                betInProgress = true;
+                // CRITICAL: Check for duplicates BEFORE setting flags or placing bet
+                // This prevents race conditions with rapid stream updates
+                const betKey = `${selectionId}:${betDecision.price.toFixed(2)}`;
+                
+                // Check if this exact bet is already in-flight (prevent duplicates)
+                if (inFlightBets.has(betKey)) {
+                  // Bet already in progress - skip this one
+                  continue;
+                }
+                
+                // Check if this is the same price as the last bet (additional safety)
+                if (lastBetPrice !== null && Math.abs(betDecision.price - lastBetPrice) < 0.01) {
+                  // Same price as last bet - skip to prevent duplicates
+                  continue;
+                }
+                
+                // Mark bet as in-flight IMMEDIATELY to prevent race conditions
+                // This must happen BEFORE setting lastBetTime to ensure atomicity
+                inFlightBets.add(betKey);
+                
+                // Set timing flags AFTER marking as in-flight
                 lastBetTime = Date.now();
                 lastBetPrice = betDecision.price;
                 
-                // Place bet and reset flag when done
+                // Place bet asynchronously - completely non-blocking
+                // Each worker thread processes independently - no waiting for other threads
                 placeBet(
                   selectionId,
                   betDecision.side,
@@ -398,8 +421,9 @@ socket.on("data", (chunk) => {
                   betDecision.reason,
                   betDecision.oldPrice,
                   betDecision.newPrice
-                ).finally(() => {
-                  betInProgress = false;
+                ).catch((err) => {
+                  // Silently handle errors - already logged in placeBet
+                  // Don't let bet failures block stream processing
                 });
               }
             }

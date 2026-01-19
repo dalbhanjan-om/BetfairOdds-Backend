@@ -14,7 +14,7 @@ const activeWorkers = new Map();
 /**
  * Factory function to create and manage a stream worker
  */
-function createStreamWorker(marketId, appKey, sessionToken, size = 1, upThreshold = 5, downThreshold = 2) {
+function createStreamWorker(marketId, appKey, sessionToken, size = 1, upThreshold = 5, downThreshold = 3) {
   return new Promise((resolve, reject) => {
     const workerPath = join(__dirname, "../../workers/StreamWorker.js");
     const worker = new Worker(workerPath, {
@@ -81,7 +81,7 @@ export async function startBot(req, res) {
   // Validate and set defaults
   const betSize = size && size > 0 ? parseFloat(size) : 1;
   const upThresh = upThreshold && upThreshold > 0 ? parseFloat(upThreshold) : 5;
-  const downThresh = downThreshold && downThreshold > 0 ? parseFloat(downThreshold) : 2;
+  const downThresh = downThreshold && downThreshold > 0 ? parseFloat(downThreshold) : 3;
 
   /**
    * Stop existing worker if already running
@@ -112,6 +112,19 @@ export async function startBot(req, res) {
       switch (msg.type) {
         case "error":
           console.error(`[Stream Controller] Market ${msg.marketId} worker reported error:`, msg.error || msg);
+          break;
+
+        case "marketClosed":
+          // Market is closed - auto-stop the bot
+          console.log(`[Stream Controller] Market ${msg.marketId} - Auto-stopping bot (Market closed)`);
+          try {
+            worker.postMessage({ type: "stop" });
+            worker.terminate();
+            activeWorkers.delete(msg.marketId);
+          } catch (err) {
+            console.error(`[Stream Controller] Error stopping worker for market ${msg.marketId}:`, err.message);
+            activeWorkers.delete(msg.marketId);
+          }
           break;
 
         case "closed":

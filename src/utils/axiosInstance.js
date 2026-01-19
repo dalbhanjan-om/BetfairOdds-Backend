@@ -1,8 +1,21 @@
 import axios from "axios";
+import https from "https";
 
 // Base URLs for different services
 const BETFAIR_API_BASE_URL = "https://api.betfair.com";
 const BETFAIR_IDENTITY_BASE_URL = "https://identitysso.betfair.com";
+
+/**
+ * HTTP Agent configuration for high concurrency
+ * Allows multiple worker threads to make concurrent requests without blocking
+ */
+const httpAgent = new https.Agent({
+  keepAlive: true,
+  keepAliveMsecs: 1000,
+  maxSockets: 50, // Increased from default 15 to allow more concurrent connections
+  maxFreeSockets: 10, // Keep connections alive for reuse
+  timeout: 30000,
+});
 
 
 /**
@@ -22,10 +35,14 @@ const defaultAxiosInstance = axios.create({
  * 
  * THREAD-SAFE: Axios instances are safe for concurrent use across worker threads.
  * Each request creates an independent config object with per-request headers.
+ * 
+ * CONCURRENCY: Configured with high maxSockets to handle multiple concurrent requests
+ * from worker threads without blocking.
  */
 export const betfairApiInstance = axios.create({
   baseURL: BETFAIR_API_BASE_URL,
   timeout: 30000,
+  httpsAgent: httpAgent, // Use custom agent for better concurrency
   headers: {
     Accept: "application/json",
     "Content-Type": "application/json",
