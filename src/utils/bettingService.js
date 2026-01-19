@@ -18,6 +18,31 @@ const PLACE_ORDERS_ENDPOINT = "/exchange/betting/json-rpc/v1";
  * @returns {Promise<Object>} The API response data
  * @throws {Error} If the API call fails
  */
+/**
+ * Retry helper with exponential backoff
+ */
+async function retryWithBackoff(fn, maxRetries = 3, baseDelay = 100) {
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      // Don't retry on client errors (4xx) except 429 (rate limit)
+      if (error.response?.status >= 400 && error.response?.status < 500 && error.response?.status !== 429) {
+        throw error;
+      }
+      
+      // Don't retry on last attempt
+      if (attempt === maxRetries - 1) {
+        throw error;
+      }
+      
+      // Exponential backoff: 100ms, 200ms, 400ms
+      const delay = baseDelay * Math.pow(2, attempt);
+      await new Promise(resolve => setTimeout(resolve, delay));
+    }
+  }
+}
+
 export async function placeBetOrder(marketId, appKey, sessionToken, instructions) {
   const timestamp = new Date().toISOString();
   
@@ -35,24 +60,28 @@ export async function placeBetOrder(marketId, appKey, sessionToken, instructions
         limitOrder: {
           size: inst.size || 1, // Default to 1 if not specified (size is passed per-worker)
           price: inst.limitOrder.price,
-          persistenceType: inst.limitOrder.persistenceType || "PERSIST",
+          persistenceType: inst.limitOrder.persistenceType || "LAPSE",
         },
       })),
     },
     id: 1,
   };
 
-
-  const response = await betfairApiRequest(
-    PLACE_ORDERS_ENDPOINT,
-    appKey,
-    sessionToken,
-    payload,
-    {
-      "Content-Type": "application/json",
-    }
+  // Retry with exponential backoff for transient failures
+  // This helps handle rate limiting and temporary network issues
+  const response = await retryWithBackoff(
+    () => betfairApiRequest(
+      PLACE_ORDERS_ENDPOINT,
+      appKey,
+      sessionToken,
+      payload,
+      {
+        "Content-Type": "application/json",
+      }
+    ),
+    3, // Max 3 retries
+    100 // Base delay 100ms
   );
-
 
   return response.data;
 }
