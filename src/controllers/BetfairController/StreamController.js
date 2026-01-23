@@ -64,7 +64,14 @@ export async function startBot(req, res) {
     req.header("x-authentication") ||
     (req.header("Authorization") || "").replace(/Bearer\s+/i, "").trim();
 
-  const { marketId, size, upThreshold, downThreshold } = req.body || {};
+  const {
+    marketId,
+    size,
+    upThreshold,
+    downThreshold,
+    eventName,
+    marketName,
+  } = req.body || {};
 
   if (!appKey) {
     return res.status(400).json({ error: "BETFAIR_APP_KEY not set" });
@@ -176,6 +183,9 @@ export async function startBot(req, res) {
         upThreshold: upThresh,
         downThreshold: downThresh,
       },
+      // Optional metadata for UI display
+      eventName: eventName || null,
+      marketName: marketName || null,
     });
 
    
@@ -265,6 +275,9 @@ export function getBotStatus(req, res) {
     activeBots[id] = {
       running: true,
       config: entry.config,
+      // Pass-through metadata for frontend views (e.g. BotPage)
+      ...(entry.eventName ? { eventName: entry.eventName } : {}),
+      ...(entry.marketName ? { marketName: entry.marketName } : {}),
     };
   }
 
