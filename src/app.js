@@ -6,6 +6,7 @@ import { login } from "./controllers/BetfairController/AuthController.js";
 import { listMarketCatalogue } from "./controllers/BetfairController/MarketCatalogue.js";
 import { startBot, stopBot, getBotStatus } from "./controllers/BetfairController/StreamController.js";
 import { placeOrder } from "./controllers/BetfairController/PlaceOrderController.js";
+import { listClearedOrdersSummary } from "./controllers/BetfairController/summaryController.js";
 
 const app = express();
 
@@ -54,5 +55,6 @@ app.post("/bot/start", startBot);
 app.post("/bot/stop", stopBot);
 app.get("/bot/status", getBotStatus);
 app.post("/place-order", placeOrder);
+app.post("/api/betfair/summary", listClearedOrdersSummary);
 
 export default app;
