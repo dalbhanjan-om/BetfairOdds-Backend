@@ -32,7 +32,7 @@ export async function listClearedOrdersSummary(req, res) {
     });
   }
 
-  const { from, to } = req.body || {};
+  const { from, to, size } = req.body || {};
 
   if (!from) {
     return res
@@ -85,10 +85,10 @@ export async function listClearedOrdersSummary(req, res) {
       }
     }
 
-    // Consider only bets with sizeSettled === 1.0
-    const relevantBets = allClearedOrders.filter(
-      (order) => Number(order.sizeSettled) === 1.0
-    );
+    // Filter by size if provided, otherwise include all bets
+    const relevantBets = size !== undefined && size !== null && size !== ''
+      ? allClearedOrders.filter((order) => Number(order.sizeSettled) === Number(size))
+      : allClearedOrders;
 
     // Count bets from this API call in the requested range
     const totalBets = relevantBets.length;
